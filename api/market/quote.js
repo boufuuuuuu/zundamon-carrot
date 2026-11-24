@@ -24,6 +24,7 @@ function toYahooSymbol(symbol) {
   const s = canonicalSymbol(symbol);
   if (s === "XAUUSD") return "GC=F";
   if (s === "XAGUSD") return "SI=F";
+  if (s === "WTI") return "CL=F";
   if (/^(BTC|ETH|SOL|XRP|DOGE|ADA|LTC)(USD|JPY|EUR)$/.test(s)) return `${s.slice(0, -3)}-${s.slice(-3)}`;
   if (/^[A-Z]{6}$/.test(s)) return `${s}=X`;
   return s;
@@ -31,7 +32,7 @@ function toYahooSymbol(symbol) {
 
 function kindOf(symbol) {
   const s = canonicalSymbol(symbol);
-  if (s === "XAUUSD" || s === "XAGUSD") return "fx";
+  if (s === "XAUUSD" || s === "XAGUSD" || s === "WTI") return "fx";
   if (/^(BTC|ETH|SOL|XRP|DOGE|ADA|LTC)(USD|JPY|EUR)$/.test(s)) return "crypto";
   if (/^[A-Z]{6}$/.test(s)) return "fx";
   return "stock";
