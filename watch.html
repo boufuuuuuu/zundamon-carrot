@@ -170,7 +170,7 @@
         border-top: 1px solid var(--line);
         word-break: break-word;
       }
-      #voiceNote {
+      #voiceSource {
         display: none;
         font-size: 0.8125rem;
         color: var(--muted);
@@ -234,9 +234,9 @@
         <p id="answerMeta"></p>
         <p id="answerReading"></p>
       </section>
-      <p id="voiceNote">音声は出せなかったよ（文字で読んでね）</p>
+      <p id="voiceSource"></p>
 
-      <button type="button" id="speedBtn">声の速さ：ゆっくり</button>
+      <button type="button" id="speedBtn">声の速さ：もっとゆっくり</button>
 
       <footer>
         <p>計算エンジン: carrot v0.4.15.5-subtraction-fix（埋め込み版）</p>
@@ -251,7 +251,7 @@
 
       var VOICEVOX_ENDPOINT = "https://api.tts.quest/v3/voicevox/synthesis";
       var VOICEVOX_SPEAKER = 3;
-      var VOICEVOX_TIMEOUT_MS = 15000;
+      var VOICEVOX_TIMEOUT_MS = 20000;
       var VOICEVOX_SECOND_TIMEOUT_MS = 45000;
       var DEVICE_RATE = 1.25;
       var DEVICE_PITCH = 2.0;
@@ -260,8 +260,22 @@
         { label: "ふつう", voicevox: 1.0, deviceFactor: 1.0 },
         { label: "もっとゆっくり", voicevox: 0.72, deviceFactor: 0.65 }
       ];
-      var speedModeIndex = 0;
+      var SPEED_STORAGE_KEY = "zundamon-watch-speed-mode";
+      var speedModeIndex = 2;
       function currentSpeedMode() { return SPEED_MODES[speedModeIndex]; }
+      function loadSpeedMode() {
+        try {
+          var saved = window.localStorage.getItem(SPEED_STORAGE_KEY);
+          var n = parseInt(saved, 10);
+          if (!isNaN(n) && n >= 0 && n < SPEED_MODES.length) speedModeIndex = n;
+        } catch (e) { /* localStorage が使えない環境では既定のまま */ }
+      }
+      function saveSpeedMode() {
+        try {
+          window.localStorage.setItem(SPEED_STORAGE_KEY, String(speedModeIndex));
+        } catch (e) { /* 保存できなくても動作は続ける */ }
+      }
+      loadSpeedMode();
 
       function delay(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
       function el(id) { return document.getElementById(id); }
@@ -355,7 +369,7 @@
       var cardWarningEl = el("answerWarning");
       var cardMetaEl = el("answerMeta");
       var cardReadingEl = el("answerReading");
-      var voiceNoteEl = el("voiceNote");
+      var voiceSourceEl = el("voiceSource");
       var speedBtnEl = el("speedBtn");
       var presetBtns = document.querySelectorAll(".preset");
 
@@ -364,6 +378,7 @@
       }
       speedBtnEl.addEventListener("click", function () {
         speedModeIndex = (speedModeIndex + 1) % SPEED_MODES.length;
+        saveSpeedMode();
         updateSpeedBtn();
       });
       updateSpeedBtn();
@@ -376,8 +391,14 @@
         statusEl.textContent = t || "";
         statusEl.style.display = t ? "block" : "none";
       }
-      function showVoiceNote() { voiceNoteEl.style.display = "block"; }
-      function hideVoiceNote() { voiceNoteEl.style.display = "none"; }
+      // 直近の回答で実際に喋った声をステータス行に示す。
+      function setVoiceSource(kind) {
+        if (kind === "voicevox") voiceSourceEl.textContent = "声：ずんだもん（VOICEVOX）";
+        else if (kind === "device") voiceSourceEl.textContent = "声：端末の声";
+        else voiceSourceEl.textContent = "音声は出せなかったよ（文字で読んでね）";
+        voiceSourceEl.style.display = "block";
+      }
+      function hideVoiceSource() { voiceSourceEl.style.display = "none"; }
 
       /* ---------------- 端末の音声合成 ---------------- */
       function pickDeviceVoice() {
@@ -529,7 +550,18 @@
           a.onerror = function () { fail(new Error("audio element error")); };
           setTimeout(finish, 30000);
           a.src = src;
-          a.play().catch(fail);
+          a.play().catch(function (err) {
+            // 音声は取れたのに再生が拒否された場合、同じ要素で1回だけ再試行する。
+            setTimeout(function () {
+              if (done) return;
+              try {
+                var retry = a.play();
+                if (retry && retry.catch) retry.catch(fail);
+              } catch (e2) {
+                fail(err);
+              }
+            }, 300);
+          });
         });
       }
 
@@ -609,22 +641,27 @@
           var secondUrl = await pSecond;
           if (seq !== seqRef) return;
           await playVoicevoxPhrase(secondUrl);
+          setVoiceSource("voicevox");
           return;
         } catch (e) {
           if (seq !== seqRef) return;
           if (spokeFirst) {
             var okSecond = await speakDevice(secondPhrase);
             if (seq !== seqRef) return;
-            if (!okSecond) showVoiceNote();
+            if (!okSecond) { setVoiceSource("none"); return; }
+            setVoiceSource("device");
             return;
           }
         }
         var okFirst = await speakDevice(firstPhrase);
         if (seq !== seqRef) return;
-        if (!okFirst) { showVoiceNote(); return; }
+        if (!okFirst) { setVoiceSource("none"); return; }
         await delay(200);
         if (seq !== seqRef) return;
-        await speakDevice(secondPhrase);
+        var okSecondDevice = await speakDevice(secondPhrase);
+        if (seq !== seqRef) return;
+        if (!okSecondDevice) { setVoiceSource("none"); return; }
+        setVoiceSource("device");
       }
 
       /* ---------------- 質問の実行 ---------------- */
@@ -638,7 +675,7 @@
         var seq = seqRef;
         stopAllSpeech();
         primeAudioElement();
-        hideVoiceNote();
+        hideVoiceSource();
         setBusy(true);
         setStatus("計算中なのだ……");
         calculateLines(q).then(function (lines) {
