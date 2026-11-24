@@ -176,6 +176,17 @@
         color: var(--muted);
         margin: 0.5rem 0 0;
       }
+      #speedBtn {
+        display: block;
+        width: 100%;
+        min-height: 3.25rem;
+        margin-top: 1rem;
+        padding: 0.625rem 0.75rem;
+        font-size: 1rem;
+        font-weight: 700;
+        text-align: center;
+        background: var(--preset-bg);
+      }
       #statusLine {
         display: none;
         font-size: 0.875rem;
@@ -225,6 +236,8 @@
       </section>
       <p id="voiceNote">音声は出せなかったよ（文字で読んでね）</p>
 
+      <button type="button" id="speedBtn">声の速さ：ゆっくり</button>
+
       <footer>
         <p>計算エンジン: carrot v0.4.15.5-subtraction-fix（埋め込み版）</p>
         <p>音声: VOICEVOX:ずんだもん</p>
@@ -242,6 +255,13 @@
       var VOICEVOX_SECOND_TIMEOUT_MS = 45000;
       var DEVICE_RATE = 1.25;
       var DEVICE_PITCH = 2.0;
+      var SPEED_MODES = [
+        { label: "ゆっくり", voicevox: 0.85, deviceFactor: 0.8 },
+        { label: "ふつう", voicevox: 1.0, deviceFactor: 1.0 },
+        { label: "もっとゆっくり", voicevox: 0.72, deviceFactor: 0.65 }
+      ];
+      var speedModeIndex = 0;
+      function currentSpeedMode() { return SPEED_MODES[speedModeIndex]; }
 
       function delay(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
       function el(id) { return document.getElementById(id); }
@@ -336,7 +356,17 @@
       var cardMetaEl = el("answerMeta");
       var cardReadingEl = el("answerReading");
       var voiceNoteEl = el("voiceNote");
+      var speedBtnEl = el("speedBtn");
       var presetBtns = document.querySelectorAll(".preset");
+
+      function updateSpeedBtn() {
+        speedBtnEl.textContent = "声の速さ：" + currentSpeedMode().label;
+      }
+      speedBtnEl.addEventListener("click", function () {
+        speedModeIndex = (speedModeIndex + 1) % SPEED_MODES.length;
+        updateSpeedBtn();
+      });
+      updateSpeedBtn();
 
       function setBusy(busy) {
         askBtn.disabled = busy;
@@ -381,7 +411,7 @@
             u.lang = "ja-JP";
             if (deviceVoice) u.voice = deviceVoice;
             u.pitch = DEVICE_PITCH;
-            u.rate = DEVICE_RATE;
+            u.rate = DEVICE_RATE * currentSpeedMode().deviceFactor;
             u.volume = 1;
             u.onend = function () { finish(true); };
             u.onerror = function () { finish(false); };
@@ -452,7 +482,7 @@
       async function fetchVoicevoxAudio(phrase, timeoutMs) {
         var limit = timeoutMs || VOICEVOX_TIMEOUT_MS;
         var deadline = Date.now() + limit;
-        var synthUrl = VOICEVOX_ENDPOINT + "?text=" + encodeURIComponent(phrase) + "&speaker=" + VOICEVOX_SPEAKER;
+        var synthUrl = VOICEVOX_ENDPOINT + "?text=" + encodeURIComponent(phrase) + "&speaker=" + VOICEVOX_SPEAKER + "&speedScale=" + currentSpeedMode().voicevox;
         var res = await fetch(synthUrl);
         if (!res.ok) throw new Error("voicevox http " + res.status);
         var data = await res.json();
